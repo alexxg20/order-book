@@ -5,8 +5,8 @@ from models import Order, Side, Trade
 class OrderBook:
     def __init__(self):
         # dictionaries to hold orders at each price level
-        self.bids = defaultdict(deque) # price -> deque of orders
-        self.asks = defaultdict(deque) # price -> deque of orders 
+        self.bids = {} # price -> deque of orders
+        self.asks = {} # price -> deque of orders
         
         # heaps with prices
         self.bid_prices = [] # max-heap for bids
@@ -18,17 +18,17 @@ class OrderBook:
     def best_ask(self): # O(1)
         return self.ask_prices[0] if self.asks else None
     
-    def add(self, order):
+    def add(self, order): # O(log n)
         if order.side == Side.BUY:
-            self.bids[order.price].append(order)
-            if order.price not in self.bid_prices:
+            self.bids.setdefault(order.price, deque()).append(order)
+            if -order.price not in self.bid_prices:
                 heapq.heappush(self.bid_prices, -order.price) # max-heap
         else:
-            self.asks[order.price].append(order)
+            self.asks.setdefault(order.price, deque()).append(order)
             if order.price not in self.ask_prices:
                 heapq.heappush(self.ask_prices, order.price) # min-heap
 
-    def remove(self, order_id):
+    def remove(self, order_id): # O(n)
         # search in bids
         for price, orders in self.bids.items():
             for order in orders:

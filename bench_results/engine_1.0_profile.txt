@@ -1,0 +1,29 @@
+         477505 function calls in 0.269 seconds
+
+   Ordered by: cumulative time
+   List reduced from 37 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.033    0.033    0.275    0.275 /home/alex/Projects/uni/EPFL/TFA/order-book/load_test.py:22(run)
+     3977    0.001    0.000    0.098    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:116(cancel)
+     3977    0.094    0.000    0.096    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:31(remove)
+    16023    0.007    0.000    0.087    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:61(submit)
+    16023    0.031    0.000    0.062    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:69(_match)
+    32046    0.017    0.000    0.043    0.000 /home/alex/anaconda3/lib/python3.14/random.py:335(randint)
+    36023    0.015    0.000    0.024    0.000 /home/alex/anaconda3/lib/python3.14/random.py:245(_randbelow_with_getrandbits)
+     9967    0.012    0.000    0.017    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:21(add)
+     6259    0.016    0.000    0.016    0.000 {built-in method _heapq.heapify}
+    68069    0.006    0.000    0.006    0.000 {built-in method _operator.index}
+    47526    0.005    0.000    0.005    0.000 {method 'getrandbits' of '_random.Random' objects}
+     3977    0.002    0.000    0.005    0.000 /home/alex/anaconda3/lib/python3.14/random.py:294(randrange)
+    36021    0.004    0.000    0.004    0.000 {method 'random' of '_random.Random' objects}
+    36023    0.003    0.000    0.003    0.000 {method 'bit_length' of 'int' objects}
+    21313    0.003    0.000    0.003    0.000 {method 'append' of 'list' objects}
+    26852    0.003    0.000    0.003    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:15(best_bid)
+    27113    0.003    0.000    0.003    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:18(best_ask)
+     9967    0.002    0.000    0.002    0.000 {method 'setdefault' of 'dict' objects}
+    16023    0.002    0.000    0.002    0.000 <string>:2(__init__)
+    11346    0.002    0.000    0.002    0.000 {built-in method builtins.min}
+
+
+20000 ops in 0.275s -> 72,681 ops/sec (seed=0, cancel_prob=0.2)
