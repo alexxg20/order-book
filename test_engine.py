@@ -22,20 +22,41 @@ def engine():
     return MatchingEngine()
 
 
+def _level_orders(level):
+    """Orders resting at a price level, oldest to newest, walking PriceLevel's linked list."""
+    orders = []
+    node = level.head.next
+    while node is not level.tail:
+        orders.append(node.order)
+        node = node.next
+    return orders
+
+
 def resting_ids(levels, price):
     """Order ids queued at a price level; returns [] rather than raising when the price isn't resting."""
-    return [o.order_id for o in levels.get(price, [])]
+    level = levels.get(price)
+    return [o.order_id for o in _level_orders(level)] if level is not None else []
+
+
+def front_order(levels, price):
+    """The order at the front of a price level's queue (the next one to trade)."""
+    return _level_orders(levels[price])[0]
 
 
 def assert_book_consistent(engine):
-    """Heaps and dicts must describe the same set of price levels, with no empty or duplicate levels."""
+    """best_bid/best_ask must reflect the live price levels, with no empty levels and no crossed book.
+
+    Checked behaviorally (best_bid/best_ask vs. max/min of the live keys) rather than by comparing
+    raw heap contents to dict keys: a lazily-cleaned heap may legitimately hold stale entries between
+    queries, so exact heap/dict equality isn't an invariant this book actually promises.
+    """
     book = engine.orderbook
-    assert sorted(-p for p in book.bid_prices) == sorted(book.bids.keys())
-    assert sorted(book.ask_prices) == sorted(book.asks.keys())
-    assert all(len(q) > 0 for q in book.bids.values())
-    assert all(len(q) > 0 for q in book.asks.values())
-    assert all(o.quantity > 0 for q in book.bids.values() for o in q)
-    assert all(o.quantity > 0 for q in book.asks.values() for o in q)
+    assert book.best_bid() == (max(book.bids) if book.bids else None)
+    assert book.best_ask() == (min(book.asks) if book.asks else None)
+    assert all(_level_orders(q) for q in book.bids.values())
+    assert all(_level_orders(q) for q in book.asks.values())
+    assert all(o.quantity > 0 for q in book.bids.values() for o in _level_orders(q))
+    assert all(o.quantity > 0 for q in book.asks.values() for o in _level_orders(q))
     if book.bids and book.asks:
         assert book.best_bid() < book.best_ask(), "book is crossed"
 
@@ -59,7 +80,7 @@ def test_zero_quantity_order_is_a_noop(engine, make):
 def test_zero_quantity_order_does_not_trade_against_resting(engine):
     engine.submit(sell(1, 100, 5))
     assert engine.submit(buy(2, 100, 0)) == []
-    assert engine.orderbook.asks[100][0].quantity == 5
+    assert front_order(engine.orderbook.asks, 100).quantity == 5
 
 
 def test_order_into_empty_book_rests(engine):
@@ -117,14 +138,14 @@ def test_exact_fill_deletes_ask_price_key(engine):
     engine.submit(sell(1, 100, 10))
     engine.submit(buy(2, 100, 10))
     assert 100 not in engine.orderbook.asks
-    assert engine.orderbook.ask_prices == []
+    assert engine.orderbook.best_ask() is None
 
 
 def test_exact_fill_deletes_bid_price_key(engine):
     engine.submit(buy(1, 100, 10))
     engine.submit(sell(2, 100, 10))
     assert 100 not in engine.orderbook.bids
-    assert engine.orderbook.bid_prices == []
+    assert engine.orderbook.best_bid() is None
 
 
 def test_fill_keeps_price_key_while_orders_remain_at_level(engine):
@@ -151,7 +172,7 @@ def test_incoming_smaller_than_resting_leaves_resting_remainder(engine):
     engine.submit(sell(1, 100, 10))
     trades = engine.submit(buy(2, 100, 4))
     assert trades == [Trade(2, 1, 100, 4)]
-    assert engine.orderbook.asks[100][0].quantity == 6
+    assert front_order(engine.orderbook.asks, 100).quantity == 6
     assert engine.orderbook.best_bid() is None
     assert_book_consistent(engine)
 
@@ -162,7 +183,7 @@ def test_incoming_larger_than_resting_rests_remainder_at_limit_price(engine):
     assert trades == [Trade(2, 1, 100, 4)]
     assert engine.orderbook.best_ask() is None
     assert engine.orderbook.best_bid() == 101
-    assert engine.orderbook.bids[101][0].quantity == 6
+    assert front_order(engine.orderbook.bids, 101).quantity == 6
     assert_book_consistent(engine)
 
 
@@ -172,7 +193,7 @@ def test_sell_incoming_larger_than_resting_rests_remainder(engine):
     assert trades == [Trade(1, 2, 100, 4)]
     assert engine.orderbook.best_bid() is None
     assert engine.orderbook.best_ask() == 99
-    assert engine.orderbook.asks[99][0].quantity == 6
+    assert front_order(engine.orderbook.asks, 99).quantity == 6
     assert_book_consistent(engine)
 
 
@@ -189,7 +210,7 @@ def test_fractional_quantities(engine):
     engine.submit(sell(1, 100, 0.5))
     trades = engine.submit(buy(2, 100, 0.25))
     assert trades == [Trade(2, 1, 100, 0.25)]
-    assert engine.orderbook.asks[100][0].quantity == 0.25
+    assert front_order(engine.orderbook.asks, 100).quantity == 0.25
 
 
 # --- multi-level sweeps and price rules ---------------------------------------
@@ -221,7 +242,7 @@ def test_sweep_stops_at_limit_price(engine):
     assert trades == [Trade(3, 1, 100, 5)]
     assert engine.orderbook.best_ask() == 102
     assert engine.orderbook.best_bid() == 101
-    assert engine.orderbook.bids[101][0].quantity == 5
+    assert front_order(engine.orderbook.bids, 101).quantity == 5
     assert_book_consistent(engine)
 
 
@@ -395,7 +416,7 @@ def test_submit_mutates_incoming_order_quantity_to_remainder(engine):
 
 def resting_orders(engine):
     book = engine.orderbook
-    return [o for levels in (book.bids, book.asks) for q in levels.values() for o in q]
+    return [o for levels in (book.bids, book.asks) for q in levels.values() for o in _level_orders(q)]
 
 
 @pytest.mark.parametrize("seed", range(20))

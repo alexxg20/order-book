@@ -1,0 +1,25 @@
+engine_1.0 (eager deque + heap.remove/heapify) vs engine_2.0_linkedlist
+(order_map + intrusive doubly linked PriceLevel + lazily-cleaned heap)
+
+Load test — 200,000 mixed ops, seed=0, cancel_prob=0.2 (load_test.py --ops 200000):
+  engine_1.0:              29,597-31,927 ops/sec  (bench_results/engine_1.0_load.txt)
+  engine_2.0_linkedlist:      407,450 ops/sec      (bench_results/engine_2.0_linkedlist_load.txt)
+  ~13x throughput at this mix.
+
+Profile — 20,000 ops, seed=0 (load_test.py --ops 20000 --profile):
+  engine_1.0: OrderBook.remove() alone was ~0.085s of 0.253s total (~35%) for 3,977 cancels.
+  engine_2.0_linkedlist: OrderBook.remove() is ~0.001s of 0.114s total (~1%) for the same 3,977 cancels.
+  remove() is no longer the bottleneck; random.randint() (load_test.py's own workload
+  generator, not the engine) and _match()/submit() now dominate.
+  Full profiles: bench_results/engine_1.0_profile.txt, bench_results/engine_2.0_linkedlist_profile.txt
+
+pytest-benchmark micro-benchmarks (bench_engine.py --benchmark-save, .benchmarks/):
+  See engine_1.0_vs_2.0_benchmark_summary.txt for the full per-case table. Highlights:
+    cancel_first_order[20000]:      665,142 ns -> 8,484 ns    (78x)
+    cancel_last_order[20000]:     1,550,170 ns -> 8,104 ns   (191x)
+    cancel_missing_order[20000]:  1,304,212 ns -> 2,401 ns   (543x)
+    add_new_price_level[20000]:     324,551 ns -> 8,075 ns    (40x)
+  Speedup grows with book size across every cancel/add variant, consistent with an
+  O(n) -> O(1)-amortized change rather than a constant-factor improvement.
+  match_single_fill and small-n cases are roughly flat (~1x, some within noise) —
+  expected, since those paths didn't change algorithmically.

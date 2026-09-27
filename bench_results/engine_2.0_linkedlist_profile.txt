@@ -1,0 +1,29 @@
+         490682 function calls in 0.114 seconds
+
+   Ordered by: cumulative time
+   List reduced from 36 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.024    0.024    0.118    0.118 /home/alex/Projects/uni/EPFL/TFA/order-book/load_test.py:22(run)
+    16023    0.005    0.000    0.055    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:88(submit)
+    16023    0.017    0.000    0.030    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:96(_match)
+    32046    0.011    0.000    0.028    0.000 /home/alex/anaconda3/lib/python3.14/random.py:335(randint)
+     9967    0.010    0.000    0.020    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:52(add)
+    36023    0.010    0.000    0.015    0.000 /home/alex/anaconda3/lib/python3.14/random.py:245(_randbelow_with_getrandbits)
+     9967    0.005    0.000    0.006    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:18(__init__)
+    68069    0.004    0.000    0.004    0.000 {built-in method _operator.index}
+    21286    0.003    0.000    0.003    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:42(best_bid)
+     3977    0.001    0.000    0.003    0.000 /home/alex/anaconda3/lib/python3.14/random.py:294(randrange)
+    47526    0.003    0.000    0.003    0.000 {method 'getrandbits' of '_random.Random' objects}
+    21333    0.003    0.000    0.003    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:47(best_ask)
+    36021    0.003    0.000    0.003    0.000 {method 'random' of '_random.Random' objects}
+     3977    0.001    0.000    0.002    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:134(cancel)
+    36023    0.002    0.000    0.002    0.000 {method 'bit_length' of 'int' objects}
+    29901    0.002    0.000    0.002    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:6(__init__)
+    21313    0.002    0.000    0.002    0.000 {method 'append' of 'list' objects}
+     3977    0.001    0.000    0.001    0.000 /home/alex/Projects/uni/EPFL/TFA/order-book/engine.py:67(remove)
+    16023    0.001    0.000    0.001    0.000 <string>:2(__init__)
+     9967    0.001    0.000    0.001    0.000 {method 'setdefault' of 'dict' objects}
+
+
+20000 ops in 0.118s -> 169,146 ops/sec (seed=0, cancel_prob=0.2)
