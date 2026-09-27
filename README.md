@@ -25,20 +25,31 @@ python3 load_test.py --ops 20000 --profile          # same, plus a cProfile brea
 
 ```python
 from engine import MatchingEngine
-from models import Order, Side
+from models import Side
 
 engine = MatchingEngine()
 
-engine.submit(Order(order_id=1, side=Side.SELL, price=99, quantity=5))
-engine.submit(Order(order_id=2, side=Side.SELL, price=101, quantity=5))
+sell_id, _ = engine.place_order(Side.SELL, 99, 5)
+engine.place_order(Side.SELL, 101, 5)
 
-trades = engine.submit(Order(order_id=3, side=Side.BUY, price=102, quantity=8))
-# trades: order 3 buys 5 @ 99 from order 1 (fully filled), then 3 @ 101 from
-# order 2 (which now rests on the book with quantity=2).
+buy_id, trades = engine.place_order(Side.BUY, 102, 8)
+# trades: buy_id buys 5 @ 99 from sell_id (fully filled), then 3 @ 101 from
+# the second sell order (which now rests on the book with quantity=2).
+
+engine.best_bid(), engine.best_ask()   # None, 101
+engine.top_levels(5)                   # ([], [(101, 2)])
+engine.cancel(buy_id)                  # False — buy_id fully filled, nothing left to cancel
 ```
 
-`submit()` returns the list of `Trade`s produced immediately; if the order
-isn't fully filled, the remainder rests on the book at its limit price.
+`place_order()` assigns the order an id, submits it, and returns
+`(order_id, trades)` — the trades produced immediately, plus the id needed
+to `cancel()` it later if any of it is still resting. If the order isn't
+fully filled, the remainder rests on the book at its limit price.
+
+If you already have a fully-formed `Order` (its own id included — useful
+for tests, or a caller that manages its own id scheme), `submit(order)` is
+the lower-level primitive `place_order` is built on; it returns just the
+trades.
 
 ## Design choices and trade-offs
 
@@ -52,14 +63,33 @@ isn't fully filled, the remainder rests on the book at its limit price.
   whatever's left unfilled after matching. This is intentional: the caller
   can inspect `order.quantity` after the call to see how much remains, or
   copy the order first if they want the original request preserved.
-- **Order ids are caller-assigned and assumed unique.** There's no
-  auto-generation and no rejection of a duplicate id; passing one is
-  undefined (the older order becomes unreachable by id).
-- **`cancel()` currently does a linear scan** of the resting orders to find
-  one by id — simple, but O(n) in book size. This is a known limitation,
-  not an oversight, and it's what `bench_engine.py`'s cancel benchmarks
-  exist to quantify; a rewrite to an id-indexed lookup is planned and the
-  benchmark numbers are how it'll be checked, not just claimed.
+- **Two entry points for submitting an order.** `place_order(side, price,
+  quantity)` is the one the spec asks for: it assigns the id (an
+  incrementing counter) and returns `(order_id, trades)`. `submit(order)`
+  underneath it takes an already-built `Order` — its own id included — and
+  is what `place_order` calls internally; it's also what the test suite
+  uses directly, since a lot of the FIFO/price-priority tests rely on
+  picking specific ids to express ordering. Mixing the two — manually
+  constructing an `Order` with an id that collides with the counter's next
+  value — is undefined; `place_order` is the one that guarantees
+  uniqueness.
+- **`top_levels(n)` reports total quantity per price level**, not just the
+  price: `(price, sum of resting quantity at that price)` for the best `n`
+  levels per side. It reads straight from the price-level dicts rather
+  than the heaps — those dicts' keys are always exactly the live prices
+  (that's the invariant the lazy heap cleanup already depends on), so this
+  needs no heap involvement at all.
+- **`cancel()` is O(1)**: an `order_id -> Node` index gives direct access to
+  the resting order, and each price level is an intrusive doubly linked
+  list (`Node`/`PriceLevel`, with sentinel head/tail nodes) so the node can
+  be spliced out without scanning anything. An earlier version scanned the
+  whole book by id instead; see `bench_results/engine_1.0_vs_2.0_*` for the
+  measured before/after (cancel at 20,000 resting orders: ~0.7-1.5ms down
+  to ~8µs).
+- **Price-level heaps are cleaned up lazily.** Deleting an empty price
+  level only removes its dict entry; the matching heap entry is left in
+  place and discarded the next time `best_bid`/`best_ask` is called and
+  finds it stale, rather than rebuilding the heap on every cancel/fill.
 - **Scope**: plain limit orders only. No market orders, no time-in-force
   variants (IOC/FOK), no order modification (cancel and resubmit instead).
 
@@ -67,12 +97,20 @@ isn't fully filled, the remainder rests on the book at its limit price.
 
 - `test_engine.py` — deterministic tests for an empty book, non-crossing
   orders, exact and partial fills, multi-level sweeps, price/time
-  priority, FIFO (including partial fills and cancels mid-queue), and
-  cancel (missing id, double-cancel, cancel of an already-filled order,
-  cancelling the best price and confirming the next level takes over).
-  Every test that changes book structure re-checks that the heaps and the
-  price-level dicts still agree with each other and that the book is never
-  crossed (`assert_book_consistent`).
+  priority, FIFO (including partial fills and cancels mid-queue), cancel
+  (missing id, double-cancel, cancel of an already-filled order,
+  cancelling the best price and confirming the next level takes over),
+  `place_order`'s id assignment (unique, increasing, usable to `cancel()`,
+  matching the ids in the resulting `Trade`s), and `top_levels` (quantity
+  per level, price ordering on both sides, `n` larger than the book,
+  empty book).
+
+  Every test that changes book structure re-checks that `best_bid`/
+  `best_ask` match the actual best of the live price levels, that no price
+  level is left empty, and that the book is never crossed
+  (`assert_book_consistent`). This is checked behaviorally rather than by
+  comparing raw heap contents to the price-level dicts, since lazy heap
+  cleanup means the two aren't required to match exactly between queries.
 - A **randomized property test**, in the same file, runs 20 fixed seeds of
   300 random submit/cancel operations each, checking that invariant after
   every single operation and that quantity is conserved
@@ -86,9 +124,13 @@ isn't fully filled, the remainder rests on the book at its limit price.
   `_match` at increasing book sizes, saved and compared across versions.
 - `load_test.py` — a synthetic end-to-end load generator reporting
   throughput, with an optional `cProfile` breakdown of where time goes.
-- `bench_results/engine_1.0_*.txt` — a captured throughput/profile snapshot
-  of this version, kept as a baseline to compare future versions against.
+- `bench_results/` — captured throughput/profile snapshots per version
+  (`engine_1.0_*`, `engine_2.0_linkedlist_*`), plus
+  `engine_1.0_vs_2.0_summary.txt` and `..._benchmark_summary.txt` comparing
+  them directly, so a performance claim always has a rerunnable number
+  behind it rather than being asserted in prose.
 
 Anything not dictated by the spec (integer prices, mutating the caller's
-order, FIFO tie-break, the resting-price-wins rule) was my own call, listed
-above rather than left implicit.
+order, FIFO tie-break, the resting-price-wins rule, the cancel data
+structure, the `submit`/`place_order` split, `top_levels`'s return shape)
+was my own call, listed above rather than left implicit.

@@ -1,4 +1,3 @@
-from collections import defaultdict, deque
 import heapq
 from models import Order, Side, Trade
 
@@ -20,6 +19,12 @@ class PriceLevel:
         self.tail = Node(None)  # sentinel node
         self.head.next = self.tail
         self.tail.prev = self.head
+        
+    def __iter__(self):
+        node = self.head.next
+        while node is not self.tail:
+            yield node.order
+            node = node.next
         
     def add(self, new_node):
         new_node.next = self.tail
@@ -79,18 +84,40 @@ class OrderBook:
             return True
                         
         return False # order_id not found
+    
+    def top_levels(self, n):
+        """Top n price levels per side as (price, total_quantity), best price first."""
+        
+        def depth(levels, prices):
+            return [(price, sum(o.quantity for o in levels[price])) for price in prices]
+        
+        return (depth(self.bids, sorted(self.bids, reverse=True)[:n]),
+            depth(self.asks, sorted(self.asks)[:n]))
+
 
 class MatchingEngine:
     
     def __init__(self):
         self.orderbook = OrderBook()
+        self._next_order_id = 1
+        
+    def place_order(self, side, price, quantity) -> tuple[int, list[Trade]]:
+        """Accepts raw order parameters, assigns an id, and returns (order_id, trades)."""
+        
+        order_id = self._next_order_id
+        self._next_order_id += 1
+        
+        order = Order(order_id=order_id, side=side, price=price, quantity=quantity)
+        trades = self.submit(order)
+        
+        return order_id, trades
 
     def submit(self, order) -> list[Trade]:
         trades = self._match(order)
         
         if order.quantity > 0: # if there is remaining quantity, add to orderbook
             self.orderbook.add(order)
-        
+
         return trades
 
     def _match(self, order) -> list[Trade]:
@@ -133,3 +160,12 @@ class MatchingEngine:
     
     def cancel(self, order_id) -> bool:
         return self.orderbook.remove(order_id)
+
+    def best_bid(self):
+        return self.orderbook.best_bid()
+
+    def best_ask(self):
+        return self.orderbook.best_ask()
+
+    def top_levels(self, n):
+        return self.orderbook.top_levels(n)

@@ -412,6 +412,74 @@ def test_submit_mutates_incoming_order_quantity_to_remainder(engine):
     assert incoming.quantity == 6
 
 
+# --- place_order (engine-assigned ids) ------------------------------------------
+# submit() stays the id-required primitive above; place_order() is the
+# spec-facing entry point that accepts only (side, price, quantity).
+
+def test_place_order_returns_an_id_and_the_trades(engine):
+    order_id, trades = engine.place_order(Side.BUY, 100, 5)
+    assert isinstance(order_id, int)
+    assert trades == []
+
+
+def test_place_order_ids_are_unique_and_increasing(engine):
+    id1, _ = engine.place_order(Side.BUY, 99, 1)
+    id2, _ = engine.place_order(Side.BUY, 98, 1)
+    id3, _ = engine.place_order(Side.SELL, 101, 1)
+    assert id1 < id2 < id3
+
+
+def test_place_order_id_can_be_used_to_cancel(engine):
+    order_id, _ = engine.place_order(Side.BUY, 100, 5)
+    assert engine.cancel(order_id) is True
+    assert engine.orderbook.best_bid() is None
+
+
+def test_place_order_returned_id_matches_trade_fields(engine):
+    sell_id, _ = engine.place_order(Side.SELL, 100, 5)
+    buy_id, trades = engine.place_order(Side.BUY, 100, 5)
+    assert trades == [Trade(buy_order_id=buy_id, sell_order_id=sell_id, price=100, quantity=5)]
+
+
+# --- top_levels (book depth) -----------------------------------------------------
+
+def test_top_levels_on_empty_book(engine):
+    bids, asks = engine.orderbook.top_levels(5)
+    assert bids == []
+    assert asks == []
+
+
+def test_top_levels_reports_total_quantity_per_level(engine):
+    engine.submit(buy(1, 100, 3))
+    engine.submit(buy(2, 100, 4))
+    bids, _ = engine.orderbook.top_levels(5)
+    assert bids == [(100, 7)]
+
+
+def test_top_levels_ordered_by_price_priority(engine):
+    for i, p in enumerate([98, 100, 99], start=1):
+        engine.submit(buy(i, p, 1))
+    for i, p in enumerate([103, 101, 102], start=10):
+        engine.submit(sell(i, p, 1))
+    bids, asks = engine.orderbook.top_levels(5)
+    assert [price for price, _ in bids] == [100, 99, 98]
+    assert [price for price, _ in asks] == [101, 102, 103]
+
+
+def test_top_levels_respects_n(engine):
+    for i, p in enumerate([98, 99, 100], start=1):
+        engine.submit(buy(i, p, 1))
+    bids, _ = engine.orderbook.top_levels(2)
+    assert [price for price, _ in bids] == [100, 99]
+
+
+def test_top_levels_n_larger_than_book_returns_all_levels(engine):
+    engine.submit(buy(1, 100, 5))
+    bids, asks = engine.orderbook.top_levels(50)
+    assert bids == [(100, 5)]
+    assert asks == []
+
+
 # --- randomized invariants -----------------------------------------------------
 
 def resting_orders(engine):
