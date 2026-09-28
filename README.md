@@ -7,7 +7,7 @@ priority matching, and cancel support.
 
 ```bash
 pip install -r requirements-dev.txt   # pytest, pytest-benchmark
-python3 main.py                       # demo: a few orders, prints the resulting trades
+python3 main.py                       # demo: runs the assignment's own worked example
 pytest -q                             # correctness tests (test_engine.py)
 ```
 
@@ -66,19 +66,19 @@ trades.
 - **Two entry points for submitting an order.** `place_order(side, price,
   quantity)` is the one the spec asks for: it assigns the id (an
   incrementing counter) and returns `(order_id, trades)`. `submit(order)`
-  underneath it takes an already-built `Order` — its own id included — and
-  is what `place_order` calls internally; it's also what the test suite
-  uses directly, since a lot of the FIFO/price-priority tests rely on
-  picking specific ids to express ordering. Mixing the two — manually
-  constructing an `Order` with an id that collides with the counter's next
-  value — is undefined; `place_order` is the one that guarantees
-  uniqueness.
+  underneath it takes an already-built `Order` with its own id — used
+  internally by `place_order`, and directly by tests that need specific
+  ids to express FIFO ordering. Mixing the two — an `Order` with an id
+  that collides with the counter's next value — is undefined.
+- **Invalid orders are rejected early.** `submit()` (and so `place_order`)
+  raises `ValueError` on a negative price or quantity, before it can reach
+  the book. Zero is allowed and is a no-op (matches nothing, rests nothing).
 - **`top_levels(n)` reports total quantity per price level**, not just the
   price: `(price, sum of resting quantity at that price)` for the best `n`
-  levels per side. It reads straight from the price-level dicts rather
-  than the heaps — those dicts' keys are always exactly the live prices
-  (that's the invariant the lazy heap cleanup already depends on), so this
-  needs no heap involvement at all.
+  levels per side. It reads the price-level dicts' keys directly (always
+  exactly the live prices — the invariant lazy heap cleanup already
+  depends on) via `heapq.nlargest`/`nsmallest`, which is O(levels log n)
+  rather than sorting every level just to take the first `n`.
 - **`cancel()` is O(1)**: an `order_id -> Node` index gives direct access to
   the resting order, and each price level is an intrusive doubly linked
   list (`Node`/`PriceLevel`, with sentinel head/tail nodes) so the node can
@@ -90,6 +90,9 @@ trades.
   level only removes its dict entry; the matching heap entry is left in
   place and discarded the next time `best_bid`/`best_ask` is called and
   finds it stale, rather than rebuilding the heap on every cancel/fill.
+- **`trade_history()`** returns every `Trade` the engine has ever produced,
+  in execution order — a minimal fills tape, beyond what the spec asks for
+  but a natural extension of trade reporting.
 - **Scope**: plain limit orders only. No market orders, no time-in-force
   variants (IOC/FOK), no order modification (cancel and resubmit instead).
 
@@ -101,9 +104,10 @@ trades.
   (missing id, double-cancel, cancel of an already-filled order,
   cancelling the best price and confirming the next level takes over),
   `place_order`'s id assignment (unique, increasing, usable to `cancel()`,
-  matching the ids in the resulting `Trade`s), and `top_levels` (quantity
-  per level, price ordering on both sides, `n` larger than the book,
-  empty book).
+  matching the ids in the resulting `Trade`s), `top_levels` (quantity per
+  level, price ordering on both sides, `n` larger than the book, empty
+  book), input validation, `trade_history`, and the exact example from the
+  assignment sheet, reproduced as a test.
 
   Every test that changes book structure re-checks that `best_bid`/
   `best_ask` match the actual best of the live price levels, that no price
@@ -129,8 +133,8 @@ trades.
   `engine_1.0_vs_2.0_summary.txt` and `..._benchmark_summary.txt` comparing
   them directly, so a performance claim always has a rerunnable number
   behind it rather than being asserted in prose.
+- `repr(orderbook)` — prints a small ladder (best few levels, asks over
+  bids) for quick inspection while debugging or demoing; see `main.py`.
 
-Anything not dictated by the spec (integer prices, mutating the caller's
-order, FIFO tie-break, the resting-price-wins rule, the cancel data
-structure, the `submit`/`place_order` split, `top_levels`'s return shape)
-was my own call, listed above rather than left implicit.
+Anything the spec leaves open was a deliberate call, noted above rather
+than left implicit.

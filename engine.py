@@ -87,44 +87,63 @@ class OrderBook:
     
     def top_levels(self, n):
         """Top n price levels per side as (price, total_quantity), best price first."""
-        
+
         def depth(levels, prices):
             return [(price, sum(o.quantity for o in levels[price])) for price in prices]
-        
-        return (depth(self.bids, sorted(self.bids, reverse=True)[:n]),
-            depth(self.asks, sorted(self.asks)[:n]))
+
+        return (depth(self.bids, heapq.nlargest(n, self.bids)),
+            depth(self.asks, heapq.nsmallest(n, self.asks)))
+
+    def __repr__(self):
+        bids, asks = self.top_levels(5)
+        if not bids and not asks:
+            return "<empty book>"
+        lines = [f"{price:>8}  ask {qty}" for price, qty in reversed(asks)]
+        lines.append("-" * 20)
+        lines += [f"{price:>8}  bid {qty}" for price, qty in bids]
+        return "\n".join(lines)
 
 
 class MatchingEngine:
-    
+
     def __init__(self):
         self.orderbook = OrderBook()
         self._next_order_id = 1
-        
+        self.trade_log = [] # every Trade ever produced, in execution order
+
     def place_order(self, side, price, quantity) -> tuple[int, list[Trade]]:
         """Accepts raw order parameters, assigns an id, and returns (order_id, trades)."""
-        
+
         order_id = self._next_order_id
         self._next_order_id += 1
-        
+
         order = Order(order_id=order_id, side=side, price=price, quantity=quantity)
         trades = self.submit(order)
-        
+
         return order_id, trades
 
     def submit(self, order) -> list[Trade]:
+        if order.price < 0 or order.quantity < 0:
+            raise ValueError(f"order price and quantity must be non-negative "
+                              f"(got price={order.price}, quantity={order.quantity})")
+
         trades = self._match(order)
-        
+
         if order.quantity > 0: # if there is remaining quantity, add to orderbook
             self.orderbook.add(order)
 
+        self.trade_log.extend(trades)
         return trades
+
+    def trade_history(self) -> list[Trade]:
+        """Every trade this engine has produced, in execution order."""
+        return list(self.trade_log)
 
     def _match(self, order) -> list[Trade]:
         trades = []
         is_buy = order.side == Side.BUY
         book = self.orderbook.asks if is_buy else self.orderbook.bids
-        best_price = self.orderbook.best_ask if is_buy else self.orderbook.best_bid # appropiate method
+        best_price = self.orderbook.best_ask if is_buy else self.orderbook.best_bid
         
         while order.quantity > 0 and best_price() is not None:
             resting_price = best_price()

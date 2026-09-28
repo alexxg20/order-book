@@ -9,12 +9,12 @@ class Side(Enum):
 class Order:
     order_id: int
     side: Side
-    price: float
+    price: int
     quantity: float
 
 @dataclass(frozen=True) # frozen because Trades are immutable historical events
 class Trade:
     buy_order_id: int
     sell_order_id: int
-    price: float
+    price: int
     quantity: float

@@ -23,13 +23,8 @@ def engine():
 
 
 def _level_orders(level):
-    """Orders resting at a price level, oldest to newest, walking PriceLevel's linked list."""
-    orders = []
-    node = level.head.next
-    while node is not level.tail:
-        orders.append(node.order)
-        node = node.next
-    return orders
+    """Orders resting at a price level, oldest to newest."""
+    return list(level)
 
 
 def resting_ids(levels, price):
@@ -403,6 +398,30 @@ def test_cancel_does_not_touch_other_side_with_same_price(engine):
     assert_book_consistent(engine)
 
 
+# --- assignment's own worked example --------------------------------------------
+
+def test_matches_the_assignment_spec_example(engine):
+    """Book: #1 sell 5@101, #2 sell 3@101, #3 sell 2@102, #4 sell 4@103.
+    Incoming #5 buy 12@102 trades 5@101, 3@101, 2@102, then rests 2@102."""
+    engine.submit(sell(1, 101, 5))
+    engine.submit(sell(2, 101, 3))
+    engine.submit(sell(3, 102, 2))
+    engine.submit(sell(4, 103, 4))
+
+    trades = engine.submit(buy(5, 102, 12))
+
+    assert trades == [
+        Trade(5, 1, 101, 5),
+        Trade(5, 2, 101, 3),
+        Trade(5, 3, 102, 2),
+    ]
+    assert engine.orderbook.best_bid() == 102
+    assert engine.orderbook.best_ask() == 103
+    assert front_order(engine.orderbook.bids, 102).quantity == 2
+    assert resting_ids(engine.orderbook.asks, 103) == [4]
+    assert_book_consistent(engine)
+
+
 # --- caller-visible behavior ---------------------------------------------------
 
 def test_submit_mutates_incoming_order_quantity_to_remainder(engine):
@@ -478,6 +497,57 @@ def test_top_levels_n_larger_than_book_returns_all_levels(engine):
     bids, asks = engine.orderbook.top_levels(50)
     assert bids == [(100, 5)]
     assert asks == []
+
+
+# --- input validation -----------------------------------------------------------
+
+def test_submit_rejects_negative_price(engine):
+    with pytest.raises(ValueError):
+        engine.submit(buy(1, -1, 5))
+
+
+def test_submit_rejects_negative_quantity(engine):
+    with pytest.raises(ValueError):
+        engine.submit(buy(1, 100, -5))
+
+
+def test_place_order_rejects_negative_price(engine):
+    with pytest.raises(ValueError):
+        engine.place_order(Side.BUY, -1, 5)
+
+
+# --- trade history ---------------------------------------------------------------
+
+def test_trade_history_accumulates_across_calls(engine):
+    engine.submit(sell(1, 100, 10))
+    engine.submit(buy(2, 100, 4))
+    engine.submit(buy(3, 100, 6))
+    assert engine.trade_history() == [Trade(2, 1, 100, 4), Trade(3, 1, 100, 6)]
+
+
+def test_trade_history_is_empty_with_no_trades(engine):
+    engine.submit(buy(1, 100, 5))
+    assert engine.trade_history() == []
+
+
+def test_trade_history_returned_list_is_a_copy(engine):
+    engine.submit(sell(1, 100, 5))
+    engine.submit(buy(2, 100, 5))
+    engine.trade_history().clear()
+    assert len(engine.trade_history()) == 1
+
+
+# --- book printer ------------------------------------------------------------
+
+def test_repr_on_empty_book(engine):
+    assert repr(engine.orderbook) == "<empty book>"
+
+
+def test_repr_shows_best_levels_on_both_sides(engine):
+    engine.submit(buy(1, 99, 5))
+    engine.submit(sell(2, 101, 3))
+    text = repr(engine.orderbook)
+    assert "99" in text and "101" in text
 
 
 # --- randomized invariants -----------------------------------------------------
