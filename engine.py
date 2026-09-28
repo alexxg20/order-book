@@ -1,6 +1,10 @@
 import heapq
 from models import Order, Side, Trade
 
+# quantity is a float; repeated -= fills can leave sub-epsilon residue instead
+# of exact 0, so treat anything within this tolerance of zero as filled.
+_QTY_EPSILON = 1e-9
+
 class Node:
     def __init__(self, order):
         self.order = order
@@ -129,7 +133,7 @@ class MatchingEngine:
 
         trades = self._match(order)
 
-        if order.quantity > 0: # if there is remaining quantity, add to orderbook
+        if order.quantity > _QTY_EPSILON: # if there is remaining quantity, add to orderbook
             self.orderbook.add(order)
 
         self.trade_log.extend(trades)
@@ -145,7 +149,7 @@ class MatchingEngine:
         book = self.orderbook.asks if is_buy else self.orderbook.bids
         best_price = self.orderbook.best_ask if is_buy else self.orderbook.best_bid
         
-        while order.quantity > 0 and best_price() is not None:
+        while order.quantity > _QTY_EPSILON and best_price() is not None:
             resting_price = best_price()
             crossed = order.price >= resting_price if is_buy else order.price <= resting_price
             
@@ -168,7 +172,7 @@ class MatchingEngine:
             order.quantity -= trade_quantity
             resting_order.quantity -= trade_quantity
             
-            if resting_order.quantity == 0:
+            if resting_order.quantity <= _QTY_EPSILON:
                 resting_node.detach() # detach the order from the LinikedList
                 del self.orderbook.order_map[resting_order.order_id]
                 
